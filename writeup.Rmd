@@ -1,0 +1,107 @@
+---
+title: "Practical Machine Learning. Course Project"
+output: html_document
+---
+
+Background
+-----
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+
+Data 
+-----
+
+The training data for this project are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har.
+
+
+Writeup
+-----
+Used libraries:
+```{r}
+library(caret)
+library(randomForest)
+library(foreach)
+library(doParallel)
+```
+
+Data was loaded directly from web source:
+```{r}
+trainingUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+evaluationUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+trainingData <- read.csv(url(trainingUrl), na.strings = c("NA", "#DIV/0!", ""))
+validationData <- read.csv(url(evaluationUrl), na.strings = c("NA", "#DIV/0!", ""))
+```
+
+
+To predict we need only complete data (not NAs) from accelerometers on the belt, forearm, arm, and dumbell, these values are starting from the 8th column:
+```{r}
+features <- colnames(trainingData[colSums(is.na(trainingData)) == 0])[-(1:7)] 
+modelData <- trainingData[features]
+```
+
+Training data has to be partinioned (75% for training and 25% for testing, these values are flexible enough, but a training set has to contain more data than a testing set) to provide cross validation:
+```{r}
+initialTraining <- createDataPartition(y = modelData$classe, p = 0.75, list = FALSE )
+trainingModel <- modelData[initialTraining,]
+testingModel <- modelData[-initialTraining,]
+```
+
+Initial testing data from the variable evaluationUrl will be used as evaluation data.
+
+Thanks to our former collegue with his idea to use parallel processing. Algorithm "Random Forests" is used in this assignment. Random forests correct for decision trees' habit of overfitting to their training set.
+```{r}
+registerDoParallel()
+x <- trainingModel[-ncol(trainingModel)]
+y <- trainingModel$classe
+
+randomForestValues <- 
+    foreach(ntree = rep(200, 5), .combine = randomForest::combine, .packages = 'randomForest') %dopar% 
+{
+    randomForest(x, y, ntree = ntree) 
+}
+```
+5 forests with 200 trees. The more trees a forest contains, the higher is its accuracy of prediction. However in our situation values were not changing dramatically, and my computer definitely did not like to make unnecessary calculations. 
+
+Predicitions from the first set:
+```{r}
+predictions1 <- predict(randomForestValues, newdata = trainingModel)
+confusionMatrix(predictions1, trainingModel$classe)
+```
+
+Predictions from the second set:
+```{r}
+predictions2 <- predict(randomForestValues, newdata = testingModel)
+confusionMatrix(predictions2, testingModel$classe)
+```
+
+Applying the machine learning algorithm I have built to each of the 20 test cases in the testing data set. Prediction sssignment submission:
+```{r}
+pmlWriteFiles = function(x)
+{
+    n = length(x)
+    for(i in 1:n)
+    {
+        filename = paste0("problem_id_", i, ".txt")
+        write.table(x[i],file = filename, quote=FALSE, row.names=FALSE, col.names=FALSE)
+    }
+}
+
+x <- validationData
+x <- x[features[features != 'classe']]
+answers <- predict(randomForestValues, newdata=x)
+
+print("Predicted values to sumbit: ")
+answers
+
+pmlWriteFiles(answers)
+```
+
+Thank you for your time and have a nice day! =)
